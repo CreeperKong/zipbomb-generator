@@ -1,0 +1,259 @@
+
+
+optimize overlap.zip
+$compressed_size
+[1] 21189
+
+$num_files
+[1] 441
+
+[1] "zipped size" "42374"      
+[1] "unzipped size" "9636541929"   
+
+
+optimize bzip2 overlap
+$compressed_size
+[1] 494
+
+$num_files
+[1] 10
+
+[1] "zipped size" "1017"       
+[1] "unzipped size" "6884885250"   
+
+
+optimize bzip2 quoted overlap
+$compressed_size
+[1] 494
+
+$num_files
+[1] 6
+
+[1] "zipped size" "1004"       
+[1] "unzipped size" "4130931150"   
+[1] 688488525
+
+
+optimize bzip2 zip64
+$compressed_size
+[1] 21006
+
+$num_files
+[1] 184
+
+[1] "zipped size" "42372"      
+[1] "unzipped size" "5540221261440"
+
+
+optimize bzip2 quoted overlap non-zip64 max
+$max_uncompressed_size
+[1] 4294967294
+
+$num_files
+[1] 1809
+
+[1] "zipped size" "155846"     
+[1] "unzipped size" "7721949598695"
+
+
+optimize bzip2 overlap zip64
+$compressed_size
+[1] 499982
+
+$num_files
+[1] 8217
+
+[1] "zipped size" "1e+06"      
+[1] "unzipped size"    "5892654314657880"
+
+
+optimize zbsm.zip
+$compressed_size
+[1] 21179
+
+$num_files
+[1] 250
+
+[1] "zipped size" "42374"      
+[1] "unzipped size" "5461307620"   
+
+
+optimize zbsm.zip with extra-field quoting
+$compressed_size
+[1] 21260
+
+$num_files
+[1] 252
+
+[1] "zipped size" "42374"      
+[1] "unzipped size" "5525059932"   
+
+
+optimize zblg.zip
+$max_uncompressed_size
+[1] 4292788525
+
+$num_files
+[1] 65534
+
+[1] "zipped size" "9893525"    
+[1] "unzipped size"   "281395456244934"
+
+
+optimize zblg.zip with extra-field quoting
+$max_uncompressed_size
+[1] 4292846565
+
+$num_files
+[1] 65534
+
+[1] "zipped size" "9891773"    
+[1] "unzipped size"   "281399207414622"
+
+
+optimize zbxl.zip
+$compressed_size
+[1] 22982788
+
+$num_files
+[1] 190023
+
+[1] "zipped size" "45876952"   
+[1] "unzipped size"    "4507981427706459"
+
+
+optimize zbxl.zip with extra-field quoting
+$compressed_size
+[1] 22982788
+
+$num_files
+[1] 190023
+
+[1] "zipped size" "45875782"   
+[1] "unzipped size"    "4507981392085269"
+
+
+optimize zbxxl.zip
+2147483648 63.07380
+4294967298 65.07141
+3221225473 64.24213
+2684354561 63.71670
+2952790017 63.99136
+3087007745 64.11947
+3019898881 64.05612
+2986344449 64.02392
+2969567233 64.00769
+2961178625 63.99953
+2965372929 64.00361
+2963275777 64.00158
+2962227201 64.00056
+2961702913 64.00004
+2961440769 63.99979
+2961571841 63.99992
+2961637377 63.99998
+2961670145 64.00001
+2961653761 64.00000
+2961661953 64.00001
+2961657857 64.00000
+2961655809 64.00000
+2961656833 64.00000
+2961656321 64.00000
+2961656577 64.00000
+2961656705 64.00000
+2961656769 64.00000
+2961656737 64.00000
+2961656721 64.00000
+2961656713 64.00000
+2961656709 64.00000
+2961656711 64.00000
+2961656712 64.00000
+2961656712 64.00000
+$compressed_size
+[1] 1482284040
+
+$num_files
+[1] 12056313
+
+[1] "zipped size" "2961656712" 
+[1] "unzipped size"        "18446744085437448192"
+
+
+optimize zbxxl.zip with extra-field quoting
+2147483648 63.07380
+4294967298 65.07141
+3221225473 64.24213
+2684354561 63.71670
+2952790017 63.99136
+3087007745 64.11947
+3019898881 64.05613
+2986344449 64.02392
+2969567233 64.00769
+2961178625 63.99954
+2965372929 64.00362
+2963275777 64.00158
+2962227201 64.00056
+2961702913 64.00005
+2961440769 63.99979
+2961571841 63.99992
+2961637377 63.99998
+2961670145 64.00001
+2961653761 64.00000
+2961661953 64.00001
+2961657857 64.00000
+2961655809 64.00000
+2961654785 64.00000
+2961655297 64.00000
+2961655553 64.00000
+2961655425 64.00000
+2961655489 64.00000
+2961655521 64.00000
+2961655537 64.00000
+2961655545 64.00000
+2961655541 64.00000
+2961655543 64.00000
+2961655542 64.00000
+2961655542 64.00000
+$compressed_size
+[1] 1482284040
+
+$num_files
+[1] 12056313
+
+[1] "zipped size" "2961655542" 
+[1] "unzipped size"        "18446744085401829376"
+
+
+smallest DEFLATE zipped_size that requires Zip64
+$compressed_size
+[1] 4160277
+
+$num_files
+[1] 47837
+
+[1] "zipped size" "8319377"    
+[1] "unzipped size"   "205420672417247"
+[1] 4294967607
+
+
+smallest DEFLATE zipped_size with extra-field quoting that requires Zip64
+$compressed_size
+[1] 4160334
+
+$num_files
+[1] 47838
+
+[1] "zipped size" "8317713"    
+[1] "unzipped size"   "205427728329753"
+[1] 4294968166
+
+
+smallest bzip2 zipped_size with extra-field quoting that requires Zip64
+$compressed_size
+[1] 3022
+
+$num_files
+[1] 34
+
+[1] "zipped size" "5828"       
+[1] "unzipped size" "146693955060" 
+[1] 4314528090
