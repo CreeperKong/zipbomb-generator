@@ -3,9 +3,10 @@ https://www.bamsoftware.com/hacks/zipbomb/
 David Fifield <david@bamsoftware.com>
 Public domain
 
+
 zipbomb is a Python 3 script that generates zip bombs according to
 parameters. Example:
-	python3 zipbomb.py --mode=quoted_overlap --num-files=250 --compressed-size=21179 > zbsm.zip
+	python3 zipbomb --mode=quoted_overlap --num-files=250 --compressed-size=21179 > zbsm.zip
 See Makefile for some examples of using it.
 
 optimize.R is an R script that computes optimal parameters for the
@@ -17,10 +18,11 @@ The optimized parameters are what you see in Makefile.
 ratio is a Python 3 script that computes the compression ratio of zip
 files listed on the command line.
 	$ make zbsm.zip zblg.zip zbxl.zip
-	$ python3 ratio.py zbsm.zip zblg.zip zbxl.zip
+	$ python3 ratio zbsm.zip zblg.zip zbxl.zip
 	zbsm.zip	5461307620 / 42374	128883.45730872705	+51.102 dB
 	zblg.zip	281395456244934 / 9893525	28442385.9286689	+74.54 dB
 	zbxl.zip	4507981427706459 / 45876952	98262444.01996146	+79.924 dB
+
 
 ## zipbomb usage
 
@@ -39,6 +41,12 @@ The script can run in one of three main modes:
 In quoted_overlap mode, you can additionally enable extra-field quoting;
 you need to provide a 4-digit hexadecimal tag type:
 	--mode=quoted_overlap --extra=9999
+In quoted_overlap mode, you can also specify to quote as many subsequent
+headers as possible, not just one. This produces slightly larger output
+file sizes and is useful whenever you are not constrained by maximum
+file size (when operating below the 0xffffffff file size limit, or when
+using Zip64).
+	--mode=quoted_overlap --giant-steps
 
 You can choose either DEFLATE or bzip2 as the compression algorithm.
 	--algorithm=deflate (default)

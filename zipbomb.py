@@ -3,7 +3,6 @@
 import binascii
 import bz2
 import getopt
-import math
 import struct
 import sys
 import zipfile
@@ -343,7 +342,7 @@ MOD_TIME = 0x6ca0
 
 def zip_version(compression_method=COMPRESSION_METHOD_DEFLATE, zip64=False):
     candidates = [ZIP_VERSION]
-    if compression_method==COMPRESSION_METHOD_BZIP2:
+    if compression_method == COMPRESSION_METHOD_BZIP2:
         candidates.append(ZIP_BZIP2_VERSION)
     if zip64:
         candidates.append(ZIP64_VERSION)
@@ -424,7 +423,7 @@ class CentralDirectoryHeader:
         #
         # Also, we set the threshold for compressed_size and
         # local_file_header_offset at 0xfffffffe rather than 0xffffffff because
-        # Go archive/zip which (wrongly, IMO) requires a Zip64 extra field to be
+        # Go archive/zip (wrongly, IMO) requires a Zip64 extra field to be
         # present when either of the two latter fields is exactly 0xffffffff.
         # https://github.com/golang/go/issues/31692
         assert self.compressed_size <= 0xfffffffe, self.compressed_size
@@ -571,30 +570,32 @@ def write_zip_full_overlap(f, num_files, compressed_size=None, max_uncompressed_
 
     return offset
 
-def write_zip_quoted_overlap(f, num_files, compressed_size=None, max_uncompressed_size=None, compression_method=COMPRESSION_METHOD_DEFLATE, zip64=False, template=[], extra_tag=None):
+# Optimization: cache calls to precompute_crc_matrix_repeated.
+crc_matrix_cache = {}
+def memo_crc_matrix_repeated(data, n):
+    val = crc_matrix_cache.get((data, n))
+    if val is not None:
+        return val
+    val = precompute_crc_matrix_repeated(b"\x00", n)
+    crc_matrix_cache[(data, n)] = val
+    return val
+
+# Compute the CRC of prefix+remainder, given the CRC of prefix, the CRC of
+# remainder, and a matrix that computes the effect of len(remainder) 0x00 bytes.
+#
+# Basically it's the xor of crc32(remainder) and crc32(prefix + zeroes), where
+# the latter quantity is the result of applying the matrix to crc32(prefix).
+def crc_combine(crc_prefix, crc_remainder, crc_matrix_zeroes):
+    # Undo the pre- and post-conditioning that crc_matrix_apply does, because
+    # crc_prefix and crc are already conditioned.
+    return crc_matrix_apply(crc_matrix_zeroes, crc_prefix ^ 0xffffffff) ^ 0xffffffff ^ crc_remainder
+
+def write_zip_quoted_overlap(f, num_files, compressed_size=None, max_uncompressed_size=None, compression_method=COMPRESSION_METHOD_DEFLATE, zip64=False, template=[], extra_tag=None, max_quoted=0):
     class FileRecord:
-        def __init__(self, header, data):
+        def __init__(self, header, data, crc_matrix):
             self.header = header
             self.data = data
-
-    # We build the file table backwards on a stack, starting with the file that
-    # contains the kernel.
-    files = []
-    kernel, n, crc_matrix = BULK_COMPRESS[compression_method](CHOSEN_BYTE, compressed_size=compressed_size, max_uncompressed_size=max_uncompressed_size)
-    header = LocalFileHeader(len(kernel), n, crc_matrix_apply(crc_matrix), filename_for_index(num_files-1), compression_method=compression_method)
-    files.append(FileRecord(header, kernel))
-
-    crc_matrix = precompute_crc_matrix_repeated(b"\x00", n)
-
-    # Optimization: cache calls to precompute_crc_matrix_repeated.
-    crc_matrix_cache = {}
-    def memo_crc_matrix_repeated(data, n):
-        val = crc_matrix_cache.get((data, n))
-        if val is not None:
-            return val
-        val = precompute_crc_matrix_repeated(b"\x00", n)
-        crc_matrix_cache[(data, n)] = val
-        return val
+            self.crc_matrix = crc_matrix
 
     # Figure out how many files we can quote using the extra field.
     num_extra_length_files = 0
@@ -605,44 +606,67 @@ def write_zip_quoted_overlap(f, num_files, compressed_size=None, max_uncompresse
             num_extra_length_files += 1
         num_extra_length_files -= 1
 
+    # Compress the kernel.
+    kernel, kernel_uncompressed_size, kernel_crc_matrix = BULK_COMPRESS[compression_method](CHOSEN_BYTE, compressed_size=compressed_size, max_uncompressed_size=max_uncompressed_size)
+    header = LocalFileHeader(len(kernel), kernel_uncompressed_size, crc_matrix_apply(kernel_crc_matrix), filename_for_index(num_files-1), compression_method=compression_method)
+    # An optimization compared to what's described in the paper is that our
+    # accumulator matrix doesn't represent the bytes of the kernel and all the
+    # preceding quoted local file headers, but just an equal number of 0x00
+    # bytes. We track the running CRC along with the matrix and use that with
+    # crc_combine to compute actual CRCs. This way is faster because we can
+    # memoize most of the calls to precompute_crc_matrix_repeated(b"\x00", n)
+    # because many local file headers share the same length.
+    crc_matrix = precompute_crc_matrix_repeated(b"\x00", kernel_uncompressed_size)
+    # Initialize the files list with a file containing the kernel.
+    files = [FileRecord(header, kernel, crc_matrix)]
+
     # DEFLATE non-compressed block quoting, until there are few enough files
     # left to use extra field quoting.
     while compression_method == COMPRESSION_METHOD_DEFLATE and len(files) < num_files - num_extra_length_files:
-        # The file that will follow this one is the one that has most recently
-        # been added to the stack.
-        next_file = files[-1]
-        next_header_bytes = next_file.header.serialize(zip64=zip64)
+        # See how many subsequent local file headers (and their own quoting
+        # blocks) we can quote here. Originally we only quoted the one
+        # immediately following header, but it's better to quote as much as we
+        # can, because then we get a small bonus--5 bytes of output for each
+        # quoting header we manage to include. The --giant-steps option
+        # activates this feature. We don't want giant steps whenever we are
+        # trying to limit output file sizes, as in zblg.zip, so that the
+        # smallest file (the file containing the kernel) can be as large as
+        # possible. Whatever the limit, we always need to quote at least one
+        # header in order to make the construction work.
+        header_bytes = files[0].header.serialize(zip64=zip64)
+        num_quoted = len(header_bytes)
+        crc_quoted = binascii.crc32(header_bytes)
+        next_file = files[0]
+        for i in range(1, len(files)):
+            file_i_header = files[i].header.serialize(zip64=zip64)
+            if num_quoted + len(files[i-1].data) + len(file_i_header) > max_quoted:
+                break
+            num_quoted += len(files[i-1].data) + len(file_i_header)
+            crc_quoted = binascii.crc32(files[i-1].data, crc_quoted)
+            crc_quoted = binascii.crc32(file_i_header, crc_quoted)
+            next_file = files[i]
 
-        # Here we do a crc32_combine operation to compute the CRC of
-        # prefix+remainder, knowing crc32(prefix), crc32(remainder), and a
-        # matrix that computes the effect of len(remainder) 0x00 bytes.
-        # Basically it's the xor of crc32(remainder) and crc32(prefix + zeroes),
-        # where the latter quantity is the result of applying the matrix to
-        # crc32(prefix).
-        crc1 = binascii.crc32(next_header_bytes)
-        crc2 = next_file.header.crc
-        # Undo the pre- and post-conditioning that crc_matrix_apply does,
-        # because crc1 and crc2 are already conditioned.
-        new_crc = crc_matrix_apply(crc_matrix, crc1 ^ 0xffffffff) ^ 0xffffffff ^ crc2
-        # Next file will have an additional len(next_header_bytes) accumulated
-        # into crc_matrix.
-        crc_matrix = matrix_mul(crc_matrix, memo_crc_matrix_repeated(b"\x00", len(next_header_bytes)))
+        # Find the CRC that results from prepending next_header_bytes to the
+        # following files, whose CRC we already know.
+        new_crc = crc_combine(crc_quoted, next_file.header.crc, next_file.crc_matrix)
+        # Accumulate len(next_header_bytes) additional 0x00 bytes into crc_matrix.
+        new_crc_matrix = matrix_mul(next_file.crc_matrix, memo_crc_matrix_repeated(b"\x00", num_quoted))
 
         # Place a non-final non-compressed DEFLATE block (BFINAL=0, BTYPE=00)
-        # that quotes the following Local File Header and joins up with the
-        # DEFLATE stream that it contains.
-        quote = struct.pack("<BHH", 0x00, len(next_header_bytes), len(next_header_bytes) ^ 0xffff)
+        # that quotes up to and including the header of next_file, and joins up
+        # with the DEFLATE stream that it contains.
+        quote = struct.pack("<BHH", 0x00, num_quoted, num_quoted ^ 0xffff)
         header = LocalFileHeader(
-            len(quote) + len(next_header_bytes) + next_file.header.compressed_size,
-            len(next_header_bytes) + next_file.header.uncompressed_size,
+            len(quote) + num_quoted + next_file.header.compressed_size,
+            num_quoted + next_file.header.uncompressed_size,
             new_crc,
             filename_for_index(num_files - len(files) - 1),
             compression_method=compression_method,
         )
-        files.append(FileRecord(header, quote))
-    # Extra field quoting.
+        files.insert(0, FileRecord(header, quote, new_crc_matrix))
+    # Extra-field quoting.
     while len(files) < num_files:
-        next_file = files[-1]
+        next_file = files[0]
         next_header_bytes = next_file.header.serialize(zip64=zip64)
         header = LocalFileHeader(
             next_file.header.compressed_size,
@@ -653,15 +677,14 @@ def write_zip_quoted_overlap(f, num_files, compressed_size=None, max_uncompresse
             extra_tag=extra_tag,
             extra_length_excess=len(next_header_bytes) + next_file.header.extra_length_excess,
         )
-        files.append(FileRecord(header, b""))
+        files.insert(0, FileRecord(header, b"", next_file.crc_matrix))
 
     for header, data in reversed(template):
-        files.append(FileRecord(header, data))
+        files.insert(0, FileRecord(header, data, precompute_crc_matrix(data)))
 
     central_directory = []
     offset = 0
-    while files:
-        record = files.pop()
+    for record in files:
         central_directory.append(CentralDirectoryHeader(offset, record.header))
         offset += f.write(record.header.serialize(zip64=zip64))
         offset += f.write(record.data)
@@ -700,6 +723,7 @@ The --num-files option and either the --compressed-size or
   --alphabet=CHARS  alphabet for constructing filenames
   --compressed-size=N  compressed size of the kernel
   --extra=HHHH      use extra-field quoting with the type tag 0xHHHH
+  --giant-steps     quote as many headers as possible, not just one
   --max-uncompressed-size=N  maximum uncompressed size of the kernel
   --mode=MODE       "no_overlap", "full_overlap", or "quoted_overlap" (default)
   --num-files=N     number of files to contain, not counting template files
@@ -708,12 +732,25 @@ The --num-files option and either the --compressed-size or
 """.format(program_name=sys.argv[0]), file=file)
 
 def main():
-    opts, args = getopt.gnu_getopt(sys.argv[1:], "h", ["algorithm=", "alphabet=", "compressed-size=", "extra=", "help", "max-uncompressed-size=", "mode=", "num-files=", "template=", "zip64"])
+    opts, args = getopt.gnu_getopt(sys.argv[1:], "h", [
+        "algorithm=",
+        "alphabet=",
+        "compressed-size=",
+        "extra=",
+        "giant-steps",
+        "help",
+        "max-uncompressed-size=",
+        "mode=",
+        "num-files=",
+        "template=",
+        "zip64",
+    ])
     assert not args, args
     global FILENAME_ALPHABET
     mode = write_zip_quoted_overlap
     compression_method = COMPRESSION_METHOD_DEFLATE
     compressed_size = None
+    giant_steps = False
     max_uncompressed_size = None
     extra_tag = None
     template_filenames = []
@@ -736,6 +773,8 @@ def main():
             # 16-bit hexadecimal tag ID. It should be possible to use any tag ID
             # that's unallocated in APPNOTE.TXT 4.5.2.
             extra_tag = int(a, 16)
+        elif o == "--giant-steps":
+            giant_steps = True
         elif o == "--max-uncompressed-size":
             max_uncompressed_size = int(a)
         elif o == "--mode":
@@ -757,12 +796,18 @@ def main():
     if extra_tag is not None and mode != write_zip_quoted_overlap:
         print("--extra only makes sense with --mode=quoted_overlap", file=sys.stderr)
         sys.exit(1)
+    if giant_steps and mode != write_zip_quoted_overlap:
+        print("--giant-steps only makes sense with --mode=quoted_overlap", file=sys.stderr)
+        sys.exit(1)
+    max_quoted = 0
+    if giant_steps:
+        max_quoted = 0xffff
 
     template = []
     for filename in template_filenames:
         template.extend(load_template(filename))
 
-    mode(sys.stdout.buffer, num_files, compressed_size=compressed_size, max_uncompressed_size=max_uncompressed_size, compression_method=compression_method, zip64=zip64, template=template, extra_tag=extra_tag)
+    mode(sys.stdout.buffer, num_files, compressed_size=compressed_size, max_uncompressed_size=max_uncompressed_size, compression_method=compression_method, zip64=zip64, template=template, extra_tag=extra_tag, max_quoted=max_quoted)
 
 if __name__ == "__main__":
     main()

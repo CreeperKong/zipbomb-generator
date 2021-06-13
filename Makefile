@@ -1,4 +1,4 @@
-ZIPBOMB = python3 zipbomb.py
+ZIPBOMB = python3 zipbomb
 
 .PHONY: all
 all: overlap.zip zbsm.zip zbsm.extra.zip zblg.zip zblg.extra.zip zbxl.zip zbxl.extra.zip zbbz2.zip
